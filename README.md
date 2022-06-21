@@ -22,3 +22,7 @@ automatically choose what to cook for myself everyday
 * 服务器随机爬取一个，每天定点运行
 * 快捷指令自动化
 * 考虑比如每次访问 API 时随机，以及 free 的搭建方式
+
+---
+
+学弟给我发了[这个](https://cook.yunyoujun.cn/)，可以参考
