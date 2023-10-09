@@ -1,0 +1,41 @@
+name: what2cook4me
+on:
+  schedule:
+    - cron: '0 0 * * 1'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ['3.10']
+    steps:
+      - name: check run after first update
+        run: |
+          if [ ! -f data.json ]; then
+            echo "update first"
+            exit 0
+          fi
+      - uses: actions/checkout@v2
+      - name: Set up Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r update/requirements.txt
+      - name: run
+        run: python update/update_video_list.py
+      - name: git
+        run: |
+          if git diff --exit-code; then
+            echo "No changes to commit"
+            exit 0
+          else
+            git config user.name github-actions
+            git config user.email github-actions@github.com
+            git add .
+            git commit -m "update"
+            git push origin main
+          fi
