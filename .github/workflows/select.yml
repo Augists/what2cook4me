@@ -1,14 +1,15 @@
 name: what2cook4me
 on:
   schedule:
-    - cron: '0 0 * * 1'
+    - cron: '0 1 * * 1'
 
 jobs:
-  runs-on: ubuntu-latest
-  steps:
-    - uses: actions/checkout@v4
-    - uses: actions/setup-go@v4
-      with:
-        go-version: '1.21'
-    - name: go run select
-      run: go run select/
+  select:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v4
+        with:
+          go-version: '1.21'
+      - name: go run select
+        run: go run select/
