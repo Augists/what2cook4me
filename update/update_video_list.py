@@ -36,24 +36,31 @@ class video_info:
         self.top_comment = video_info_json.top_comment
         self.date = video_info_json.date
 
+    def __lt__(self, other):
+        return self.date < other.date
+
 
 class video_info_list:
     def __init__(self, json_path) -> None:
         self.video_list = list()
-        if not os.path.exists(json_path):
-            os.mknod(json_path)
+        self.json_path = json_path
+        self.check_and_read()
+
+    def check_and_read(self):
+        if not os.path.exists(self.json_path):
+            os.mknod(self.json_path)
             return
-        with open(json_path, 'r', encoding='utf-8') as f:
+        with open(self.json_path, 'r', encoding='utf-8') as f:
             video_list_json = json.load(f)
-        for video_info_json in video_list_json:
-            self.video_list.append(video_info(video_info_json))
+            for video_info_json in video_list_json:
+                self.video_list.append(video_info(video_info_json))
+
+    def sort_video_info(self):
+        self.video_list = self.video_list.sort()
 
     def get_latest(self) -> video_info:
-        latest_video = v
-        for v in self.video_list:
-            if v.date > latest_video.date:
-                latest_video = v
-        return latest_video
+        self.sort_video_info()
+        return self.video_list[-1]
 
 
 def update_video_list(up_url: str) -> None:
