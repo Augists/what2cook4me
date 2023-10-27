@@ -2,7 +2,6 @@ import requests
 import json
 import uuid
 import random
-import datetime
 import os
 # from bs4 import BeautifulSoup as bs
 
@@ -26,6 +25,7 @@ COOKIES = {
 
 base_url = 'https://bilibili.com/'
 json_path = 'video_list.json'
+up_id = '1637070460'
 
 
 class Video_Info:
@@ -37,10 +37,11 @@ class Video_Info:
         top_comment
     '''
 
-    def __init__(self, video_info_json) -> None:
-        self.title = video_info_json.title
-        self.url = video_info_json.url
-        self.top_comment = video_info_json.top_comment
+    # 居然有支持oop的语言不支持重载方法
+    # def __init__(self, video_info_json) -> None:
+    # self.title = video_info_json.title
+    # self.url = video_info_json.url
+    # self.top_comment = video_info_json.top_comment
 
     def __init__(self, title, url, top_comment) -> None:
         self.title = title
@@ -65,13 +66,19 @@ class Video_Info_List:
             read into video_list and latest_video_bv
         '''
         if not os.path.exists(json_path):
-            os.mknod(json_path)
+            open(json_path, 'a').close()
+            # cannot use mknod on Windows, use open to create file on multi-platform. details:
+            # https://stackoverflow.com/questions/32691981/python-module-os-has-no-attribute-mknod
+            # os.mknod(json_path)
             return
         with open(json_path, 'r', encoding='utf-8') as f:
             load_video_list_json = json.load(f)
             self.latest_video_bv = load_video_list_json['latest_video_bv']
             for video_info_json in load_video_list_json['list']:
-                self.video_list.append(Video_Info(video_info_json))
+                title = video_info_json['title']
+                url = video_info_json['url']
+                top_comment = video_info_json['top_comment']
+                self.video_list.append(Video_Info(title, url, top_comment))
 
     # def sort_video_info(self):
     # self.video_list = self.video_list.sort()
@@ -98,8 +105,10 @@ def update_video_list(up_url: str) -> None:
     '''
     video_info_list = Video_Info_List()
     if video_info_list.check_update(up_url):
-        video_list = get_all_video(up_url, video_info_list)
+        get_all_video(up_url, video_info_list)
         write_json(video_info_list)
+    else:
+        print("no update\nstay unchanged")
 
 
 def get_latest_video(url: str) -> str:
@@ -126,6 +135,8 @@ def get_all_video(url: str, video_info_list: Video_Info_List) -> None:
     res.encoding = 'utf-8'
     json_res = json.loads(res.text)
     res_video_list = json_res['data']['list']['vlist']
+    # update latest video info(bv)
+    video_info_list.latest_video_bv = res_video_list[0]['bvid']
     for res_video_info in res_video_list:
         video_info_list.add_video_info(res_video_info)
 
@@ -142,7 +153,7 @@ def get_top_comment(bv: str) -> str:
     comment_base_url = 'http://api.bilibili.com/x/v2/reply/main'
     params = {
         'type': 1,
-        'mid': bv, # TODO:test mid - bv
+        'oid': bv,
     }
     response = requests.get(
         url=comment_base_url,
@@ -152,7 +163,6 @@ def get_top_comment(bv: str) -> str:
         cookies=COOKIES)
     response.raise_for_status()
     comment_data = response.json()
-
     top_comment_data = comment_data['data']['top']['upper']
     if top_comment_data is None:
         # 如果没有置顶评论则查看最上面的一条评论
@@ -165,18 +175,18 @@ def get_top_comment(bv: str) -> str:
 
 
 def write_json(video_info_list: Video_Info_List) -> None:
-    data = {'latest_video_bv': video_info_list.latest_video_bv, 'list': video_info_list.video_list.__dict__}
+    data = {'latest_video_bv': video_info_list.latest_video_bv,
+            'list': [li.__dict__ for li in video_info_list.video_list]}
     print(data)
     # video_info_list.__dict__
     with open(json_path, 'w', encoding='utf-8') as f:
         # f.write(json.dumps(data))
-        json.dump(data, f)
+        json.dump(data, f, ensure_ascii=False)
 
 
 if __name__ == '__main__':
-    up_id = '1637070460'
     # path: /x/space/wbi/arc/search?mid=1637070460&ps=30&tid=0&pn=1&keyword=&order=pubdate&platform=web&web_location=1550101&order_avoided=true&w_rid=5f623e925753e2a2c08c9820ada9a3b9&wts=1698397697
     # path: /x/space/wbi/arc/search?mid=1637070460&ps=30&tid=0&pn=6&keyword=&order=pubdate&platform=web&web_location=1550101&order_avoided=true&w_rid=5763958a6ea4eb77e4f6020ef4fa5814&wts=1698397854
-    up_url = 'https://api.bilibili.com/x/space/wbi/arc/search?mid=' + \
+    up_space_url = 'https://api.bilibili.com/x/space/wbi/arc/search?mid=' + \
         up_id + '&order=pubdate&order_avoided=true&platform=web'
-    update_video_list(up_url)
+    update_video_list(up_space_url)
