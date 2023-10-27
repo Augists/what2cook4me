@@ -4,7 +4,7 @@ import uuid
 import random
 import datetime
 import os
-from bs4 import BeautifulSoup as bs
+# from bs4 import BeautifulSoup as bs
 
 HEADERS = {
     'authority': 'api.bilibili.com',
@@ -24,83 +24,153 @@ COOKIES = {
     'buvid3': "{}{:05d}infoc".format(uuid.uuid4(), random.randint(1, 99999))
 }
 
+base_url = 'https://bilibili.com/'
+json_path = 'video_list.json'
 
-class video_info:
+
+class Video_Info:
     '''
     视频列表存储单元
-    video_info
+    Video_Info
         title
         url
         top_comment
-        date
     '''
 
     def __init__(self, video_info_json) -> None:
         self.title = video_info_json.title
         self.url = video_info_json.url
         self.top_comment = video_info_json.top_comment
-        self.date = video_info_json.date
 
-    def __lt__(self, other):
-        return self.date < other.date
+    def __init__(self, title, url, top_comment) -> None:
+        self.title = title
+        self.url = url
+        self.top_comment = top_comment
+
+    # def __lt__(self, other):
+    # return self.date < other.date
 
 
-class video_info_list:
-    def __init__(self, json_path) -> None:
-        self.video_list = list()
-        self.json_path = json_path
+class Video_Info_List:
+    def __init__(self) -> None:
+        self.video_list = []
+        self.latest_video_bv = None
         self.check_and_read()
 
     def check_and_read(self):
-        if not os.path.exists(self.json_path):
-            os.mknod(self.json_path)
+        '''
+        not exist:
+            create file and return
+        exist:
+            read into video_list and latest_video_bv
+        '''
+        if not os.path.exists(json_path):
+            os.mknod(json_path)
             return
-        with open(self.json_path, 'r', encoding='utf-8') as f:
+        with open(json_path, 'r', encoding='utf-8') as f:
             load_video_list_json = json.load(f)
-            for video_info_json in load_video_list_json:
-                self.video_list.append(video_info(video_info_json))
+            self.latest_video_bv = load_video_list_json['latest_video_bv']
+            for video_info_json in load_video_list_json['list']:
+                self.video_list.append(Video_Info(video_info_json))
 
-    def sort_video_info(self):
-        self.video_list = self.video_list.sort()
+    # def sort_video_info(self):
+    # self.video_list = self.video_list.sort()
 
-    def get_latest(self) -> video_info:
-        self.sort_video_info()
-        return self.video_list[-1] if len(self.video_list) else None
+    def check_update(self, up_url: str) -> bool:
+        '''
+        no update -> False
+        '''
+        # self.sort_video_info()
+        return True if self.latest_video_bv != get_latest_video(up_url) else False
+
+    def add_video_info(self, video_info):
+        title = video_info['title']
+        url = base_url + video_info['bvid']
+        top_comment = get_top_comment(video_info['bvid'])
+        self.video_list.append(Video_Info(title, url, top_comment))
 
 
 def update_video_list(up_url: str) -> None:
     '''
+    读取本地json文件
     检查up视频是否有更新
     若有 -> 更新video_list.json
     '''
-    json_file = 'video_list.json'
-
-    video_list = video_info_list(json_file)
-    latest_video = video_list.get_latest()
-    if latest_video == None or latest_video.url != get_latest_video(up_url):
-        video_list = get_all_video(up_url)
-        write_json(video_list, json_file)
+    video_info_list = Video_Info_List()
+    if video_info_list.check_update(up_url):
+        video_list = get_all_video(up_url, video_info_list)
+        write_json(video_info_list)
 
 
 def get_latest_video(url: str) -> str:
-    return None
-
-
-def get_all_video(url: str) -> video_info_list:
-    res = requests.get(url, headers=HEADERS, cookies=COOKIES)
+    '''
+    return latest bv
+    '''
+    res = requests.get(
+        url=url,
+        headers=HEADERS,
+        timeout=10,
+        cookies=COOKIES)
     res.encoding = 'utf-8'
-    print(res.text)
-    soup = bs(res.text)
-    # print(soup)
-    BVselector = soup.select_one("div.section.video.full-rows")
+    json_res = json.loads(res.text)
+    res_video_list = json_res['data']['list']['vlist']
+    return res_video_list[0]['bvid']
+
+
+def get_all_video(url: str, video_info_list: Video_Info_List) -> None:
+    res = requests.get(
+        url=url,
+        headers=HEADERS,
+        timeout=10,
+        cookies=COOKIES)
+    res.encoding = 'utf-8'
+    json_res = json.loads(res.text)
+    res_video_list = json_res['data']['list']['vlist']
+    for res_video_info in res_video_list:
+        video_info_list.add_video_info(res_video_info)
+
+    # soup = bs(res.text)
+    # BVselector = soup.select_one("div.section.video.full-rows")
     # for BV in BVselector.select('div'):
     # print(BV)
-    return video_info_list()
 
 
-def write_json(video_list: video_info_list, json_file: str) -> None:
-    with open(json_file, 'w', encoding='utf-8') as f:
-        f.write(json.dumps(video_list.__dict__))
+def get_top_comment(bv: str) -> str:
+    """
+    获取视频的置顶评论，如果没有置顶评论则返回 None
+    """
+    comment_base_url = 'http://api.bilibili.com/x/v2/reply/main'
+    params = {
+        'type': 1,
+        'mid': bv, # TODO:test mid - bv
+    }
+    response = requests.get(
+        url=comment_base_url,
+        params=params,
+        headers=HEADERS,
+        timeout=10,
+        cookies=COOKIES)
+    response.raise_for_status()
+    comment_data = response.json()
+
+    top_comment_data = comment_data['data']['top']['upper']
+    if top_comment_data is None:
+        # 如果没有置顶评论则查看最上面的一条评论
+        if comment_data['data']['replies'][0]['member']['mid'] == '1637070460':
+            return comment_data['data']['replies'][0]['content']['message']
+        else:
+            return None
+    else:
+        return top_comment_data['content']['message']
+
+
+def write_json(video_info_list: Video_Info_List) -> None:
+    data = {'latest_video_bv': video_info_list.latest_video_bv, 'list': video_info_list.video_list.__dict__}
+    print(data)
+    # video_info_list.__dict__
+    with open(json_path, 'w', encoding='utf-8') as f:
+        # f.write(json.dumps(data))
+        json.dump(data, f)
 
 
 if __name__ == '__main__':
@@ -109,5 +179,4 @@ if __name__ == '__main__':
     # path: /x/space/wbi/arc/search?mid=1637070460&ps=30&tid=0&pn=6&keyword=&order=pubdate&platform=web&web_location=1550101&order_avoided=true&w_rid=5763958a6ea4eb77e4f6020ef4fa5814&wts=1698397854
     up_url = 'https://api.bilibili.com/x/space/wbi/arc/search?mid=' + \
         up_id + '&order=pubdate&order_avoided=true&platform=web'
-    # update_video_list(up_url)
-    print(get_all_video(up_url))
+    update_video_list(up_url)
