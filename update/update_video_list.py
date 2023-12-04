@@ -3,6 +3,9 @@ import json
 import uuid
 import random
 import os
+from functools import reduce
+import time
+from hashlib import md5
 # from bs4 import BeautifulSoup as bs
 
 HEADERS = {
@@ -210,12 +213,55 @@ def write_json(video_info_list: Video_Info_List) -> None:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
 
+# Wbi sign
+# https://github.com/SocialSisterYi/bilibili-API-collect
+mixinKeyEncTab = [
+    46, 47, 18, 2, 53, 8, 23, 32, 15, 50, 10, 31, 58, 3, 45, 35, 27, 43, 5, 49,
+    33, 9, 42, 19, 29, 28, 14, 39, 12, 38, 41, 13, 37, 48, 7, 16, 24, 55, 40,
+    61, 26, 17, 0, 1, 60, 51, 30, 4, 22, 25, 54, 21, 56, 59, 6, 63, 57, 62, 11,
+    36, 20, 34, 44, 52
+]
+
+def getMixinKey(orig: str):
+    '对 imgKey 和 subKey 进行字符顺序打乱编码'
+    return reduce(lambda s, i: s + orig[i], mixinKeyEncTab, '')[:32]
+
+def encWbi(params: dict, img_key: str, sub_key: str):
+    '为请求参数进行 wbi 签名'
+    mixin_key = getMixinKey(img_key + sub_key)
+    curr_time = round(time.time())
+    params['wts'] = curr_time                                   # 添加 wts 字段
+    params = dict(sorted(params.items()))                       # 按照 key 重排参数
+    # 过滤 value 中的 "!'()*" 字符
+    params = {
+        k : ''.join(filter(lambda chr: chr not in "!'()*", str(v)))
+        for k, v 
+        in params.items()
+    }
+    query = urllib.parse.urlencode(params)                      # 序列化参数
+    wbi_sign = md5((query + mixin_key).encode()).hexdigest()    # 计算 w_rid
+    params['w_rid'] = wbi_sign
+    return params
+
+def getWbiKeys() -> tuple[str, str]:
+    '获取最新的 img_key 和 sub_key'
+    resp = requests.get('https://api.bilibili.com/x/web-interface/nav')
+    resp.raise_for_status()
+    json_content = resp.json()
+    img_url: str = json_content['data']['wbi_img']['img_url']
+    sub_url: str = json_content['data']['wbi_img']['sub_url']
+    img_key = img_url.rsplit('/', 1)[1].split('.')[0]
+    sub_key = sub_url.rsplit('/', 1)[1].split('.')[0]
+    return img_key, sub_key
+
+
 if __name__ == '__main__':
     # path: /x/space/wbi/arc/search?mid=1637070460&ps=30&tid=0&pn=1&keyword=&order=pubdate&platform=web&web_location=1550101&order_avoided=true&w_rid=5f623e925753e2a2c08c9820ada9a3b9&wts=1698397697
     # path: /x/space/wbi/arc/search?mid=1637070460&ps=30&tid=0&pn=6&keyword=&order=pubdate&platform=web&web_location=1550101&order_avoided=true&w_rid=5763958a6ea4eb77e4f6020ef4fa5814&wts=1698397854
     # up_space_url = 'https://api.bilibili.com/x/space/wbi/arc/search?mid=' + \
     # up_id + '&order=pubdate&order_avoided=true&platform=web'
     up_space_url = 'https://api.bilibili.com/x/space/wbi/arc/search'
+    img_key, sub_key = getWbiKeys()
     params = {
         'mid': up_id,
         'order': 'pubdate',
@@ -223,4 +269,9 @@ if __name__ == '__main__':
         'order_avoided': True,
         'platform': 'web'
     }
-    update_video_list(up_space_url, params)
+    signed_params = encWbi(
+        params=params,
+        img_key=img_key,
+        sub_key=sub_key
+    )
+    update_video_list(up_space_url, signed_params)

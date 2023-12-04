@@ -12,4 +12,4 @@ jobs:
         with:
           go-version: '1.21'
       - name: go run select
-        run: go run select/
+        run: go env
